@@ -1,1 +1,115 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>OW Instant Counters</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#e6edf3;--muted:#8b949e;--tank:#f0c14b;--dmg:#f85149;--sup:#3fb950;--accent:#58a6ff}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text)}
+header,main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+input{width:100%;padding:14px 16px;font-size:16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);-webkit-appearance:none}
+.role-chips{margin-top:10px}
+.role-chips>span{display:block;color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:8px 0 6px}
+button{background:#21262d;color:var(--text);border:1px solid var(--line);border-radius:999px;padding:8px 12px;margin:0 6px 6px 0;font-size:13px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+.who{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.who h2{margin:0;font-size:24px}
+.badge{font-size:12px;padding:3px 8px;border-radius:999px;border:1px solid var(--line)}
+.badge.Tank{color:var(--tank)}.badge.Damage{color:var(--dmg)}.badge.Support{color:var(--sup)}
+.hard{color:var(--muted);font-size:13px;margin:8px 0 0}
+.role{margin-top:14px}
+.role h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+.role.tank h3{color:var(--tank)}.role.damage h3{color:var(--dmg)}.role.support h3{color:var(--sup)}
+ol{margin:0;padding-left:20px}li{margin:0 0 8px;line-height:1.35}
+.tip{margin-top:14px;padding:10px 12px;background:#0d1117;border-left:3px solid var(--accent);font-size:14px}
+.empty{color:var(--muted);padding:12px 0}
+</style>
+</head>
+<body>
+<header>
+<h1>OW Instant Counters</h1>
+<div class="sub">Season 4 · tap a hero or type a name</div>
+<form id="f" action="#"><input id="q" type="search" enterkeyhint="search" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Type hero name"/></form>
+<div id="chips"></div>
+</header>
+<main id="out"><div class="empty">Loading…</div></main>
+<script>
+const SRC=[
+  "./counters.json",
+  "https://cdn.jsdelivr.net/gh/sikesham/ow-instant-counters@main/counters.json",
+  "https://raw.githubusercontent.com/sikesham/ow-instant-counters/main/counters.json"
+];
+function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"")}
+async function load(){
+  let last;
+  for (const url of SRC){
+    try{
+      const r=await fetch(url,{cache:"no-store"});
+      if(!r.ok) throw new Error(r.status);
+      return await r.json();
+    }catch(e){last=e}
+  }
+  throw last||new Error("load failed");
+}
+load().then(DATA=>{
+  const entries=Object.values(DATA.heroes);
+  const groups={Tank:[],Damage:[],Support:[]};
+  for (const h of entries) groups[h.role].push(h.name);
+  const chips=document.getElementById("chips");
+  chips.innerHTML=["Tank","Damage","Support"].map(role=>{
+    const names=groups[role].slice().sort();
+    return `<div class="role-chips"><span>${role}</span><div>${names.map(n=>`<button type="button" data-h="${n}">${n}</button>`).join("")}</div></div>`;
+  }).join("");
+  function find(q){
+    const n=norm(q); if(!n) return [];
+    const scored=[];
+    for(const h of entries){
+      let score=0;
+      for(const nm of [h.name,...(h.aliases||[])]){
+        const nn=norm(nm);
+        if(nn===n) score=Math.max(score,100);
+        else if(nn.startsWith(n)) score=Math.max(score,80);
+        else if(n.length>=2 && nn.includes(n)) score=Math.max(score,50);
+      }
+      if(score) scored.push({score,h});
+    }
+    scored.sort((a,b)=>b.score-a.score);
+    return scored.map(x=>x.h);
+  }
+  function render(h){
+    const block=(role,items)=>`<div class="role ${role}"><h3>${role}</h3><ol>${items.map(i=>`<li><strong>${i.hero}</strong> — ${i.why}</li>`).join("")}</ol></div>`;
+    return `<div class="card"><div class="who"><h2>${h.name}</h2><span class="badge ${h.role}">${h.role}</span></div>
+      <div class="hard">Strongest counter: <strong>${h.hardest}</strong></div>
+      ${block("tank",h.counters.tank)}${block("damage",h.counters.damage)}${block("support",h.counters.support)}
+      <div class="tip"><strong>How to play:</strong> ${h.tip}</div></div>`;
+  }
+  const out=document.getElementById("out");
+  const q=document.getElementById("q");
+  function update(){
+    const v=q.value.trim();
+    if(!v){out.innerHTML='<div class="empty">Tap a hero. Or type a name.</div>';return;}
+    const hits=find(v);
+    out.innerHTML=hits.length?render(hits[0]):'<div class="empty">No match. Try D.Mon, JQ, Ball, Zen, Soldier, or Widow.</div>';
+  }
+  q.addEventListener("input",update);
+  q.addEventListener("search",update);
+  q.addEventListener("keyup",update);
+  document.getElementById("f").addEventListener("submit",e=>{e.preventDefault();update();q.blur();});
+  chips.addEventListener("click",e=>{
+    const b=e.target.closest("[data-h]");
+    if(!b) return;
+    q.value=b.getAttribute("data-h");
+    update();
+  });
+  out.innerHTML='<div class="empty">Tap a hero. Or type a name.</div>';
+}).catch(()=>{
+  document.getElementById("out").innerHTML='<div class="empty">Could not load counter data.</div>';
+});
+</script>
+</body>
+</html>
